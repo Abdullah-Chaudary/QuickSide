@@ -13,7 +13,6 @@ if !DirExist(AppDir)
 cfg       := LoadConfig()
 PANEL_W   := cfg.width
 win       := BuildGui()
-sq        := { id: 0, x: 0, y: 0, w: 0, h: 0, max: false, valid: false }
 PMon      := MonitorGetPrimary()
 animating := false
 isOpen    := false
@@ -140,133 +139,85 @@ TogglePanel(*) {
 }
 
 ShowPanel(*) {
-    global isOpen, animating, sq, PMon, win, PANEL_W, lastTab, newItem, note
+    global isOpen, animating, PMon, win, PANEL_W, lastTab, newItem, note
+    global axS, axE, ay, aw, ah, aStart, aDur
     if isOpen or animating
         return
 
-    sq.valid := false
     PMon := MonitorGetPrimary()
-    wid := WinGetID("A")
-
-    if wid and wid != win.hwnd and WinExist("ahk_id " wid) {
-        title := WinGetTitle("ahk_id " wid)
-        if title {
-            try {
-                WinGetPos(&wx, &wy, &ww, &wh, "ahk_id " wid)
-                wasMax := WinGetMinMax("ahk_id " wid) = 1
-                mon := GetMonitorOfPoint(wx + ww // 2, wy + wh // 2)
-                if mon > 0
-                    PMon := mon
-                if wasMax
-                    WinRestore("ahk_id " wid)
-                WinGetPos(&wx, &wy, &ww, &wh, "ahk_id " wid)
-                if ww > 300
-                    sq := { id: wid, x: wx, y: wy, w: ww, h: wh, max: wasMax, valid: true }
-            } catch {
-                sq.valid := false
-            }
-        }
-    }
-
     MonitorGetWorkArea(PMon, &ax1, &ay1, &ax2, &ay2)
     ph := Min(600, ay2 - ay1)
     py := ay2 - ph
     pw := PANEL_W
-    tx := ax2 - pw
 
-    if sq.valid and sq.max {
-        sq.x := ax1
-        sq.y := ay1
-        sq.w := ax2 - ax1
-        sq.h := ay2 - ay1
-    }
-
+    axS := ax2
+    axE := ax2 - pw
+    ay := py
+    aw := pw
+    ah := ph
+    aDur := 170
     animating := true
     win.Show("x" ax2 " y" py " w" pw " h" ph)
-    if sq.valid and sq.max
-        WinMove(sq.x, sq.y, sq.w, sq.h, "ahk_id " sq.id)
+    aStart := A_TickCount
+    SetTimer(AnimShow, 15)
+}
 
-    DllCall("winmm\timeBeginPeriod", "UInt", 1)
-    steps := 300
-    start := A_TickCount
-    dur := 250
-    try {
-        loop steps {
-            k := A_Index
-            win.Move(ax2 - Round(k / steps * pw), py, pw, ph)
-            target := start + Round(k / steps * dur)
-            while A_TickCount < target {
-                Sleep 0
-            }
-        }
+AnimShow(*) {
+    global animating, isOpen, win, lastTab, newItem, note
+    global axS, axE, ay, aw, ah, aStart, aDur
+    el := A_TickCount - aStart
+    frac := el / aDur
+    if frac > 1
+        frac := 1
+    win.Move(axS + Round((axE - axS) * frac), ay, aw, ah)
+    if el >= aDur {
+        SetTimer(AnimShow, 0)
+        animating := false
+        isOpen := true
+        WinActivate(win)
+        if lastTab = 1
+            newItem.Focus()
+        else if lastTab = 2
+            note.Focus()
     }
-    DllCall("winmm\timeEndPeriod", "UInt", 1)
-
-    if sq.valid
-        WinMove(sq.x, sq.y, sq.w - pw, sq.h, "ahk_id " sq.id)
-
-    animating := false
-    isOpen := true
-
-    WinActivate(win)
-    if lastTab = 1
-        newItem.Focus()
-    else if lastTab = 2
-        note.Focus()
 }
 
 HidePanel(*) {
-    global isOpen, animating, sq, PMon, win, PANEL_W
+    global isOpen, animating, PMon, win, PANEL_W
+    global axS, axE, ay, aw, ah, aStart, aDur
     if !isOpen or animating
         return
     SaveNotes()
-    animating := true
     pw := PANEL_W
     MonitorGetWorkArea(PMon, &ax1, &ay1, &ax2, &ay2)
     ph := Min(600, ay2 - ay1)
     py := ay2 - ph
-    tx := ax2 - pw
 
-    if sq.valid
-        WinMove(sq.x, sq.y, sq.w, sq.h, "ahk_id " sq.id)
-
-    DllCall("winmm\timeBeginPeriod", "UInt", 1)
-    steps := 300
-    start := A_TickCount
-    dur := 250
-    try {
-        loop steps {
-            k := A_Index
-            win.Move(tx + Round(k / steps * pw), py, pw, ph)
-            target := start + Round(k / steps * dur)
-            while A_TickCount < target {
-                Sleep 0
-            }
-        }
-    }
-    win.Hide()
-    DllCall("winmm\timeEndPeriod", "UInt", 1)
-    animating := false
-    isOpen := false
-
-    if sq.valid and WinExist("ahk_id " sq.id) {
-        WinMove(sq.x, sq.y, sq.w, sq.h, "ahk_id " sq.id)
-        if sq.max
-            WinMaximize("ahk_id " sq.id)
-        if WinActive("ahk_id " win.hwnd)
-            WinActivate("ahk_id " sq.id)
-    }
-    sq.valid := false
+    axS := ax2 - pw
+    axE := ax2
+    ay := py
+    aw := pw
+    ah := ph
+    aDur := 170
+    animating := true
+    aStart := A_TickCount
+    SetTimer(AnimHide, 15)
 }
 
-GetMonitorOfPoint(x, y) {
-    n := MonitorGetCount()
-    loop n {
-        MonitorGetWorkArea(A_Index, &x1, &y1, &x2, &y2)
-        if x >= x1 and x <= x2 and y >= y1 and y <= y2
-            return A_Index
+AnimHide(*) {
+    global animating, isOpen, win
+    global axS, axE, ay, aw, ah, aStart, aDur
+    el := A_TickCount - aStart
+    frac := el / aDur
+    if frac > 1
+        frac := 1
+    win.Move(axS + Round((axE - axS) * frac), ay, aw, ah)
+    if el >= aDur {
+        SetTimer(AnimHide, 0)
+        win.Hide()
+        animating := false
+        isOpen := false
     }
-    return 0
 }
 
 AddTodo(*) {
